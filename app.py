@@ -7,7 +7,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from security_engine import scan_sensitive_data, evaluate_outbound, SensitiveDataScanner
+from security_engine import (
+    scan_sensitive_data, evaluate_outbound, SensitiveDataScanner, DataCategory,
+    Decision, inspect_action, inspect_prompt,
+)
+from action_gateway import ActionRequest, AgentActionGateway, demo_echo_handler
+from policy_manager import PolicyManager
 
 # ---------------------------------------------------------
 # CONFIGURATION + PERSISTENT SQLITE STORAGE
@@ -18,6 +23,21 @@ st.set_page_config(
     layout="wide",
 )
 DB_PATH = Path(__file__).resolve().parent / "agentshield.db"
+POLICY_PATH = Path(__file__).resolve().parent / "security_policies.json"
+
+
+def load_policy_manager():
+    try:
+        return PolicyManager.load(POLICY_PATH)
+    except (OSError, ValueError, KeyError, TypeError):
+        return PolicyManager()
+
+
+POLICY_MANAGER = load_policy_manager()
+ACTION_GATEWAY = AgentActionGateway(policy_manager=POLICY_MANAGER)
+# Local-only demo handlers: they return a preview and never contact a network.
+for _tool_name in ("send_message", "upload_preview", "summarize_preview"):
+    ACTION_GATEWAY.register_tool(_tool_name, demo_echo_handler)
 
 
 def now_iso():
@@ -86,75 +106,6 @@ init_db()
 # AGENTGUARD-INSPIRED LOCAL POLICY ENGINE
 # This evaluates simulated actions; it does not execute tools.
 # ---------------------------------------------------------
-TOOL_POLICIES = {
-    "read": ("ALLOW", 10),
-    "search": ("ALLOW", 10),
-    "summarize": ("ALLOW", 10),
-    "email": ("APPROVAL_REQUIRED", 55),
-    "message": ("APPROVAL_REQUIRED", 55),
-    "upload": ("APPROVAL_REQUIRED", 60),
-    "delete": ("BLOCK", 95),
-    "shell": ("BLOCK", 95),
-    "database": ("BLOCK", 90),
-    "money_transfer": ("BLOCK", 95),
-}
-DANGEROUS_PATTERNS = [
-    r"ignore (all )?(previous|prior) instructions",
-    r"reveal (the )?(system prompt|secrets|credentials)",
-    r"send .*?(api key|password|secret|token)",
-    r"exfiltrat",
-    r"bypass (security|authentication|authorization)",
-]
-
-
-def inspect_action(tool_name, description, contains_sensitive_data=False):
-    tool = (tool_name or "").strip().lower()
-    text = (description or "").strip().lower()
-    policy, risk = TOOL_POLICIES.get(tool, ("APPROVAL_REQUIRED", 50))
-    reasons = []
-
-    if tool not in TOOL_POLICIES:
-        reasons.append("Unknown tool: review its permissions.")
-    if contains_sensitive_data:
-        risk = max(risk, 85)
-        reasons.append("Sensitive data may be exposed.")
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, text):
-            risk = max(risk, 90)
-            reasons.append("Suspicious instruction pattern detected.")
-
-    if risk >= 85 or policy == "BLOCK":
-        decision = "BLOCK"
-    elif policy == "APPROVAL_REQUIRED":
-        decision = "APPROVAL_REQUIRED"
-    else:
-        decision = "ALLOW"
-    if not reasons:
-        reasons.append("No additional suspicious pattern matched.")
-    return {
-        "tool": tool or "unknown",
-        "risk_score": min(risk, 100),
-        "decision": decision,
-        "reasons": reasons,
-    }
-
-
-def inspect_prompt(prompt):
-    text = (prompt or "").lower()
-    findings = []
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, text):
-            findings.append("Potential prompt-injection indicator detected.")
-    if re.search(r"\b(password|api[_ -]?key|secret|access[_ -]?token)\s*[:=]", text):
-        findings.append("Possible credential disclosure.")
-    findings = list(dict.fromkeys(findings))
-    score = min(100, len(findings) * 35)
-    return {
-        "risk_score": score,
-        "findings": findings,
-        "decision": "REVIEW" if findings else "NO_INDICATOR_DETECTED",
-    }
-
 # ---------------------------------------------------------
 # LOCAL SCANNERS
 # ---------------------------------------------------------
@@ -276,12 +227,12 @@ st.sidebar.caption("AI × CYBERSECURITY")
 st.sidebar.divider()
 page = st.sidebar.radio("Navigation", [
     "Overview", "Data Shield", "Threat Analyzer", "Log Inspector",
-    "Agent Firewall", "Prompt Security", "Approval Center", "Audit Center",
+    "Agent Firewall", "Policy Manager", "Prompt Security", "Approval Center", "Audit Center",
 ])
 st.sidebar.divider()
 st.sidebar.caption("CHAKRAVYUH 1.0")
 st.sidebar.caption("Team Hacksmiths · HK26-0049")
-st.sidebar.caption("Local prototype · simulated actions only")
+st.sidebar.caption("Local prototype · gateway-enforced simulated actions")
 
 st.markdown("""
 <div class="hero">
@@ -359,7 +310,7 @@ if page == "Overview":
             timeline["Day"] = pd.to_datetime(timeline["Time"], errors="coerce").dt.strftime("%m-%d")
             timeline = timeline.dropna(subset=["Day"]).groupby("Day", as_index=False).size().rename(columns={"size": "Events"}).tail(10)
             if not timeline.empty:
-                st.bar_chart(timeline.set_index("Day"), use_container_width=True, height=245)
+                st.bar_chart(timeline.set_index("Day"), width="stretch", height=245)
             else:
                 st.caption("Not enough timestamp data to draw the timeline.")
     with chart_right:
@@ -368,7 +319,7 @@ if page == "Overview":
             st.info("Decision distribution appears after the first security event.")
         else:
             distribution = recent["Decision"].fillna("UNKNOWN").value_counts().rename_axis("Decision").reset_index(name="Count")
-            st.bar_chart(distribution.set_index("Decision"), use_container_width=True, height=245)
+            st.bar_chart(distribution.set_index("Decision"), width="stretch", height=245)
             st.caption("Based on the latest 100 recorded events.")
 
     st.markdown("### Recent security activity")
@@ -377,7 +328,7 @@ if page == "Overview":
     else:
         display_recent = recent.head(10).copy()
         display_recent["Subject"] = display_recent["Subject"].astype(str).str.slice(0, 100)
-        st.dataframe(display_recent, use_container_width=True, hide_index=True)
+        st.dataframe(display_recent, width="stretch", hide_index=True)
         st.caption("Open Audit Center for filtering and exporting the recorded history.")
 
 # ---------------------------------------------------------
@@ -407,7 +358,7 @@ elif page == "Data Shield":
     with right:
         st.write("")
         st.write("")
-        run_scan = st.button("🔎 Analyze sensitive data", type="primary", use_container_width=True)
+        run_scan = st.button("🔎 Analyze sensitive data", type="primary", width="stretch")
 
     if run_scan:
         if not content.strip():
@@ -478,7 +429,7 @@ elif page == "Data Shield":
                         "Masked example": f.matched_preview,
                         "Recommended action": f.recommendation,
                     })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
             st.markdown("#### Safe preview")
             st.caption(f"Strategy: {redaction_strategy}. The original content is not included in the audit event.")
@@ -488,7 +439,7 @@ elif page == "Data Shield":
                 data=safe_preview,
                 file_name="agentshield_redacted.txt",
                 mime="text/plain",
-                use_container_width=True,
+                width="stretch",
             )
 
             st.markdown("#### Outbound transfer policy check")
@@ -498,20 +449,16 @@ elif page == "Data Shield":
                 key="dlp_destination",
                 placeholder="https://approved.example.com/upload",
             )
-            authorized = st.checkbox(
-                "I have verified this destination is authorized to receive this data",
-                key="dlp_authorized",
-            )
             approved = st.checkbox(
                 "I explicitly approve this sensitive-data transfer after reviewing the findings",
                 key="dlp_user_approved",
             )
-            if st.button("Evaluate transfer", key="evaluate_dlp_transfer", use_container_width=True):
-                transfer = evaluate_outbound(
+            if st.button("Evaluate transfer", key="evaluate_dlp_transfer", width="stretch"):
+                transfer = POLICY_MANAGER.evaluate(
                     content,
                     destination.strip(),
-                    destination_authorized=authorized,
                     user_approved=approved,
+                    purpose="Data Shield outbound transfer evaluation",
                 )
                 st.markdown(f"**Decision: `{transfer.decision.value}`**")
                 st.progress(min(transfer.risk_score, 100) / 100, text=f"Transfer risk: {transfer.risk_score}/100")
@@ -532,9 +479,11 @@ elif page == "Data Shield":
                         "finding_count": len(transfer.scan.findings),
                         "categories": transfer.scan.categories,
                         "destination_scheme_https": destination.strip().lower().startswith("https://"),
-                        "destination_authorized": authorized,
+                        "destination_host": transfer.destination_host,
+                        "trusted_destination": transfer.trusted_destination,
                         "user_approved": approved,
                         "reasons": list(transfer.reasons),
+                        "raw_content_saved": False,
                     },
                 )
 
@@ -565,7 +514,7 @@ elif page == "Threat Analyzer":
     st.subheader("🌐 URL Threat Analyzer")
     st.caption("Check URL characteristics using local heuristic rules.")
     url = st.text_input("URL to analyze", placeholder="https://example.com/account")
-    if st.button("Analyze URL", use_container_width=True):
+    if st.button("Analyze URL", width="stretch"):
         if not url.strip():
             st.warning("Enter a URL first.")
         else:
@@ -593,7 +542,7 @@ elif page == "Log Inspector":
     st.caption("Search supplied logs for basic suspicious activity patterns.")
     logs = st.text_area("Paste sample logs", height=220,
                         placeholder="Paste authorized log samples here...")
-    if st.button("Inspect Logs", use_container_width=True):
+    if st.button("Inspect Logs", width="stretch"):
         if not logs.strip():
             st.warning("Enter log text first.")
         else:
@@ -602,84 +551,181 @@ elif page == "Log Inspector":
             decision = "FLAGGED" if found else "NO_INDICATOR_DETECTED"
             if found:
                 st.warning("Review the following log indicators.")
-                st.dataframe(pd.DataFrame(found), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(found), width="stretch", hide_index=True)
             else:
                 st.success("No configured indicators matched.")
             save_audit("LOG_SCAN", "Security log inspection", decision, risk, {"findings": found})
             st.caption("Pattern matching is limited and does not replace professional log analysis.")
 
 # ---------------------------------------------------------
-# AGENT FIREWALL
+# AGENT FIREWALL — POLICY-INTEGRATED ACTION GATEWAY
 # ---------------------------------------------------------
 elif page == "Agent Firewall":
     st.subheader("🧱 Agent Firewall")
-    st.caption("AgentGuard-inspired policy checks for simulated AI-agent actions.")
+    st.caption("The Action Gateway evaluates destination trust and sensitive-data policy before a registered handler can execute.")
+    st.warning("Safe demo mode: handlers return a local preview only. No real email, upload, shell command, network request, or external action is performed.")
+
     with st.form("agent_firewall_form"):
-        tool = st.selectbox("Requested tool", [
-            "read", "search", "summarize", "email", "message", "upload",
+        tool = st.selectbox("Requested action", [
+            "send_message", "upload_preview", "summarize_preview",
             "delete", "shell", "database", "money_transfer", "unknown_tool",
-        ])
-        description = st.text_area("Describe the requested action",
-                                   placeholder="Example: Send a project report to the team")
-        sensitive = st.checkbox("The action may expose sensitive information")
-        submitted = st.form_submit_button("Inspect action", type="primary", use_container_width=True)
+        ], format_func=lambda value: {
+            "send_message": "Send message (simulated)",
+            "upload_preview": "Upload preview (simulated)",
+            "summarize_preview": "Summarize content (simulated)",
+            "delete": "Delete (unregistered / blocked)",
+            "shell": "Shell command (unregistered / blocked)",
+            "database": "Database action (unregistered / blocked)",
+            "money_transfer": "Money transfer (unregistered / blocked)",
+            "unknown_tool": "Unknown tool (unregistered / blocked)",
+        }.get(value, value))
+        destination = st.text_input("Destination URL (HTTPS required)", placeholder="https://example.com/api")
+        description = st.text_area("Content the action would use", height=150,
+                                   placeholder="Use synthetic test text; never paste real credentials.")
+        purpose = st.text_input("Purpose (optional)", placeholder="Why is this action needed?")
+        submitted = st.form_submit_button("Evaluate action", type="primary", width="stretch")
+
+    def record_gateway_result(request, result):
+        evaluation = result.policy_evaluation
+        reasons = list(evaluation.reasons) if evaluation else list(result.security_result.reasons)
+        host = evaluation.destination_host if evaluation else None
+        # Persist metadata only, never the original request content.
+        save_audit("GATEWAY_ACTION", f"{request.tool_name} → {host or 'invalid destination'}",
+                   result.decision.value, result.risk_score, {
+                       "tool": request.tool_name,
+                       "destination_host": host,
+                       "trusted_destination": bool(evaluation and evaluation.trusted_destination),
+                       "executed": result.executed,
+                       "categories": result.security_result.scan.categories,
+                       "finding_count": len(result.security_result.scan.findings),
+                       "reasons": reasons,
+                       "raw_content_saved": False,
+                   })
+
     if submitted:
         if not description.strip():
-            st.warning("Describe the requested action first.")
+            st.warning("Enter the content or action description first.")
         else:
-            # Scan the action description before applying the existing tool policy.
-            scan_result = scan_sensitive_data(description)
-            sensitive_detected = sensitive or scan_result.has_sensitive_data
-            result = inspect_action(tool, description, contains_sensitive_data=sensitive_detected)
-
-            # Critical credentials are blocked. Other detected sensitive content
-            # requires review unless the base policy already blocks the action.
-            if any(f.severity.value == "CRITICAL" for f in scan_result.findings):
-                result["decision"] = "BLOCK"
-                result["risk_score"] = max(result["risk_score"], 95)
-                result["reasons"].append("Critical credential pattern detected in the action description.")
-            elif scan_result.has_sensitive_data and result["decision"] == "ALLOW":
-                result["decision"] = "APPROVAL_REQUIRED"
-                result["risk_score"] = max(result["risk_score"], 55)
-                result["reasons"].append("Sensitive information detected; approval is required before any transfer.")
-
-            decision, risk = result["decision"], result["risk_score"]
-            if decision == "ALLOW":
-                st.success("ALLOW — permitted by the current prototype policy.")
-            elif decision == "APPROVAL_REQUIRED":
-                st.warning("APPROVAL REQUIRED — reviewer action needed.")
-            else:
-                st.error("BLOCK — denied by the current prototype policy.")
-            st.metric("Risk score", f"{risk}/100")
-            st.write("**Reasons for this decision**")
-            for reason in result["reasons"]:
-                st.write(f"- {reason}")
-            if scan_result.has_sensitive_data:
-                st.subheader("Sensitive-data findings")
-                st.dataframe(pd.DataFrame([
-                    {"Category": f.category.value, "Severity": f.severity.value,
-                     "Finding": f.description}
-                    for f in scan_result.findings
-                ]), use_container_width=True, hide_index=True)
-                st.caption("Detected values are intentionally not shown in findings.")
-
-            # Avoid writing the raw action text into the audit DB or approval queue.
-            safe_description = scan_result.redacted_text[:2000]
-            safe_result = {
-                "tool": result["tool"], "risk_score": risk,
-                "decision": decision, "reasons": result["reasons"],
-                "sensitive_categories": sorted({f.category.value for f in scan_result.findings}),
+            request = ActionRequest(tool_name=tool, content=description,
+                                    destination=destination.strip(), purpose=purpose.strip())
+            result = ACTION_GATEWAY.execute(request)
+            record_gateway_result(request, result)
+            st.session_state["gateway_last_result"] = {
+                "decision": result.decision.value,
+                "risk_score": result.risk_score,
+                "message": result.message,
+                "reasons": list(result.policy_evaluation.reasons) if result.policy_evaluation else list(result.security_result.reasons),
+                "redacted": result.security_result.scan.redacted_text,
+                "categories": result.security_result.scan.categories,
+                "executed": result.executed,
+                "output": result.output,
             }
-            save_audit("AGENT_ACTION", f"{tool}: {safe_description[:150]}", decision, risk, safe_result)
-            if decision == "APPROVAL_REQUIRED":
-                with sqlite3.connect(DB_PATH) as conn:
-                    conn.execute("""
-                        INSERT INTO approvals (created_at, tool, description, risk_score, reasons)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (now_iso(), tool, safe_description, risk,
-                          json.dumps(result["reasons"], ensure_ascii=False)))
-                st.info("This request was added to the Approval Center with detected secrets redacted.")
-            st.caption("Prototype mode: no external tool or real-world action was executed.")
+            if result.decision == Decision.REVIEW:
+                st.session_state["gateway_pending_action"] = {
+                    "tool_name": tool, "content": description,
+                    "destination": destination.strip(), "purpose": purpose.strip(),
+                }
+            else:
+                st.session_state.pop("gateway_pending_action", None)
+
+    last = st.session_state.get("gateway_last_result")
+    if last:
+        st.divider()
+        st.subheader("Gateway decision")
+        metric_cols = st.columns(2)
+        metric_cols[0].metric("Decision", last["decision"])
+        metric_cols[1].metric("Risk score", f"{last['risk_score']}/100")
+        if last["decision"] == "ALLOW":
+            st.success(last["message"])
+        elif last["decision"] == "REVIEW":
+            st.warning("REVIEW — action paused. Inspect the redacted preview before approving.")
+        else:
+            st.error("BLOCK — the registered handler was not executed.")
+        st.write("**Policy reasons**")
+        for reason in last["reasons"]:
+            st.write(f"- {reason}")
+        if last["categories"]:
+            st.write("**Detected categories:** " + ", ".join(last["categories"]))
+        if last["redacted"]:
+            st.write("**Redacted content preview**")
+            st.code(last["redacted"], language="text")
+        if last["executed"]:
+            st.success("Local demo handler executed. Returned preview:")
+            st.json(last["output"])
+
+    pending = st.session_state.get("gateway_pending_action")
+    if pending:
+        st.info("This action is paused for explicit approval. Approval passes only the redacted preview to the local demo handler.")
+        if st.button("Approve redacted action", type="primary", width="stretch"):
+            approved_request = ActionRequest(
+                tool_name=pending["tool_name"], content=pending["content"],
+                destination=pending["destination"], user_approved=True,
+                purpose=pending["purpose"],
+            )
+            approved_result = ACTION_GATEWAY.execute(approved_request)
+            record_gateway_result(approved_request, approved_result)
+            st.session_state["gateway_last_result"] = {
+                "decision": approved_result.decision.value,
+                "risk_score": approved_result.risk_score,
+                "message": approved_result.message,
+                "reasons": list(approved_result.policy_evaluation.reasons) if approved_result.policy_evaluation else list(approved_result.security_result.reasons),
+                "redacted": approved_result.security_result.scan.redacted_text,
+                "categories": approved_result.security_result.scan.categories,
+                "executed": approved_result.executed,
+                "output": approved_result.output,
+            }
+            st.session_state.pop("gateway_pending_action", None)
+            st.rerun()
+        if st.button("Cancel pending action", width="stretch"):
+            st.session_state.pop("gateway_pending_action", None)
+            st.session_state.pop("gateway_last_result", None)
+            st.rerun()
+
+# ---------------------------------------------------------
+# POLICY MANAGER
+# ---------------------------------------------------------
+elif page == "Policy Manager":
+    st.subheader("🛡️ Trusted Destinations & Policies")
+    st.caption("The gateway trusts exact HTTPS hostnames by default. Adding a host does not establish its reputation; add only destinations you control or have independently verified.")
+    with st.form("add_trusted_destination_form"):
+        host = st.text_input("Hostname only", placeholder="example.com")
+        allow_subdomains = st.checkbox("Also trust subdomains (for example, api.example.com)", value=False)
+        allowed_categories = st.multiselect(
+            "Categories this host may receive without per-action approval (critical credentials are always blocked)",
+            options=[category.value for category in DataCategory], default=[],
+        )
+        note = st.text_input("Note (optional)", placeholder="Why is this destination trusted?")
+        add_host = st.form_submit_button("Add trusted destination", type="primary", width="stretch")
+    if add_host:
+        try:
+            POLICY_MANAGER.add_trusted_destination(host, allow_subdomains=allow_subdomains,
+                                                   allowed_categories=allowed_categories, note=note)
+            POLICY_MANAGER.save(POLICY_PATH)
+            st.success(f"Trusted destination saved: {host.strip().lower()}")
+            st.rerun()
+        except (ValueError, OSError) as exc:
+            st.error(f"Could not add destination: {exc}")
+
+    st.subheader("Current trusted destinations")
+    destinations = POLICY_MANAGER.policy.trusted_destinations
+    if not destinations:
+        st.warning("No destinations are trusted yet. Gateway actions will be blocked until you add a host.")
+    for destination_entry in destinations:
+        with st.container(border=True):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"**{destination_entry.host}**")
+                st.caption("Subdomains allowed" if destination_entry.allow_subdomains else "Exact hostname only")
+                if destination_entry.allowed_categories:
+                    st.write("Approval-exempt categories: " + ", ".join(destination_entry.allowed_categories))
+                if destination_entry.note:
+                    st.write(destination_entry.note)
+            with col2:
+                if st.button("Remove", key=f"remove_host_{destination_entry.host}", width="stretch"):
+                    POLICY_MANAGER.remove_trusted_destination(destination_entry.host)
+                    POLICY_MANAGER.save(POLICY_PATH)
+                    st.rerun()
+    st.caption(f"Policy file: {POLICY_PATH.name}. Critical credentials remain blocked regardless of trust or approval.")
 
 # ---------------------------------------------------------
 # PROMPT SECURITY
@@ -689,7 +735,7 @@ elif page == "Prompt Security":
     st.caption("Inspect text for potential prompt-injection indicators.")
     prompt = st.text_area("Prompt or agent response", height=200,
                           placeholder="Paste synthetic test text here...")
-    if st.button("Analyze Prompt", type="primary", use_container_width=True):
+    if st.button("Analyze Prompt", type="primary", width="stretch"):
         if not prompt.strip():
             st.warning("Enter text to analyze first.")
         else:
@@ -740,7 +786,7 @@ elif page == "Approval Center":
                 reviewer_note = st.text_input("Reviewer note (optional)", key=f"review_note_{approval_id}")
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("Approve", key=f"approve_{approval_id}", use_container_width=True):
+                    if st.button("Approve", key=f"approve_{approval_id}", width="stretch"):
                         with sqlite3.connect(DB_PATH) as conn:
                             updated = conn.execute("""
                                 UPDATE approvals SET status='APPROVED', reviewed_at=?, reviewer_note=?
@@ -751,7 +797,7 @@ elif page == "Approval Center":
                                        {"tool": tool, "reviewer_note": reviewer_note[:500]})
                         st.rerun()
                 with col2:
-                    if st.button("Reject", key=f"reject_{approval_id}", use_container_width=True):
+                    if st.button("Reject", key=f"reject_{approval_id}", width="stretch"):
                         with sqlite3.connect(DB_PATH) as conn:
                             updated = conn.execute("""
                                 UPDATE approvals SET status='REJECTED', reviewed_at=?, reviewer_note=?
@@ -766,7 +812,7 @@ elif page == "Approval Center":
         reviewed_df = pd.DataFrame(reviewed_rows, columns=[
             "ID", "Tool", "Description", "Risk", "Status", "Reviewed at", "Reviewer note"
         ])
-        st.dataframe(reviewed_df, use_container_width=True, hide_index=True)
+        st.dataframe(reviewed_df, width="stretch", hide_index=True)
     st.caption("Approval records a reviewer decision only. It does not execute the requested action.")
 
 # ---------------------------------------------------------
@@ -794,11 +840,11 @@ elif page == "Audit Center":
         decisions = sorted(events["Decision"].dropna().unique().tolist())
         decision_filter = st.multiselect("Filter by decision", options=decisions, default=[])
         visible = events[events["Decision"].isin(decision_filter)] if decision_filter else events
-        st.dataframe(visible.drop(columns=["Details"]), use_container_width=True, hide_index=True)
+        st.dataframe(visible.drop(columns=["Details"]), width="stretch", hide_index=True)
         st.download_button("Export visible audit events as CSV",
                            data=visible.to_csv(index=False).encode("utf-8"),
                            file_name="agentshield_audit.csv", mime="text/csv",
-                           use_container_width=True)
+                           width="stretch")
         with st.expander("View event details"):
             event_ids = visible["ID"].tolist()
             if event_ids:

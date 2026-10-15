@@ -134,6 +134,79 @@ PATTERNS = [
 SEVERITY_SCORES = {Severity.INFO: 0, Severity.LOW: 10, Severity.MEDIUM: 25,
                    Severity.HIGH: 45, Severity.CRITICAL: 70}
 
+TOOL_POLICIES = {
+    "read": ("ALLOW", 10),
+    "search": ("ALLOW", 10),
+    "summarize": ("ALLOW", 10),
+    "email": ("APPROVAL_REQUIRED", 55),
+    "message": ("APPROVAL_REQUIRED", 55),
+    "upload": ("APPROVAL_REQUIRED", 60),
+    "delete": ("BLOCK", 95),
+    "shell": ("BLOCK", 95),
+    "database": ("BLOCK", 90),
+    "money_transfer": ("BLOCK", 95),
+}
+DANGEROUS_PATTERNS = [
+    r"ignore (all )?(previous|prior) instructions",
+    r"reveal (the )?(system prompt|secrets|credentials)",
+    r"send .*?(api key|password|secret|token)",
+    r"exfiltrat",
+    r"bypass (security|authentication|authorization)",
+]
+
+
+def inspect_action(
+    tool_name: str,
+    description: str,
+    contains_sensitive_data: bool = False,
+) -> dict[str, object]:
+    tool = (tool_name or "").strip().lower()
+    text = (description or "").strip().lower()
+    policy, risk = TOOL_POLICIES.get(tool, ("APPROVAL_REQUIRED", 50))
+    reasons = []
+
+    if tool not in TOOL_POLICIES:
+        reasons.append("Unknown tool: review its permissions.")
+    if contains_sensitive_data:
+        risk = max(risk, 85)
+        reasons.append("Sensitive data may be exposed.")
+    for pattern in DANGEROUS_PATTERNS:
+        if re.search(pattern, text):
+            risk = max(risk, 90)
+            reasons.append("Suspicious instruction pattern detected.")
+
+    if risk >= 85 or policy == "BLOCK":
+        decision = "BLOCK"
+    elif policy == "APPROVAL_REQUIRED":
+        decision = "APPROVAL_REQUIRED"
+    else:
+        decision = "ALLOW"
+    if not reasons:
+        reasons.append("No additional suspicious pattern matched.")
+    return {
+        "tool": tool or "unknown",
+        "risk_score": min(risk, 100),
+        "decision": decision,
+        "reasons": reasons,
+    }
+
+
+def inspect_prompt(prompt: str) -> dict[str, object]:
+    text = (prompt or "").lower()
+    findings = []
+    for pattern in DANGEROUS_PATTERNS:
+        if re.search(pattern, text):
+            findings.append("Potential prompt-injection indicator detected.")
+    if re.search(r"\b(password|api[_ -]?key|secret|access[_ -]?token)\s*[:=]", text):
+        findings.append("Possible credential disclosure.")
+    findings = list(dict.fromkeys(findings))
+    score = min(100, len(findings) * 35)
+    return {
+        "risk_score": score,
+        "findings": findings,
+        "decision": "REVIEW" if findings else "NO_INDICATOR_DETECTED",
+    }
+
 
 def _luhn_valid(value: str) -> bool:
     digits = re.sub(r"\D", "", value)
