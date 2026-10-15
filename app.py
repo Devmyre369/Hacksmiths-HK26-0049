@@ -307,7 +307,9 @@ if page == "Overview":
             st.info("Run a scan to populate the activity timeline.")
         else:
             timeline = recent.copy()
-            timeline["Day"] = pd.to_datetime(timeline["Time"], errors="coerce").dt.strftime("%m-%d")
+            timeline["Day"] = pd.to_datetime(
+                timeline["Time"], format="mixed", errors="coerce", utc=True
+            ).dt.strftime("%m-%d")
             timeline = timeline.dropna(subset=["Day"]).groupby("Day", as_index=False).size().rename(columns={"size": "Events"}).tail(10)
             if not timeline.empty:
                 st.bar_chart(timeline.set_index("Day"), width="stretch", height=245)
