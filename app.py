@@ -224,22 +224,47 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap');
 .stApp {
-    background: radial-gradient(ellipse at top left, #142747, #080d18 55%);
-    color: #edf4ff; font-family: 'Manrope', sans-serif;
+    background: radial-gradient(ellipse at top left, #260d14, #080709 55%);
+    color: #fff0f2; font-family: 'Manrope', sans-serif;
 }
-section[data-testid="stSidebar"] { background: #09111f; border-right: 1px solid #20304a; }
+section[data-testid="stSidebar"] { background: #10090d; border-right: 1px solid #48202b; }
 .block-container { max-width: 1400px; padding-top: 2rem; }
-.hero { padding: 28px; border: 1px solid #294467; border-radius: 18px;
-    background: linear-gradient(120deg, #172f52, #0d192b); margin-bottom: 24px; }
-.hero h1 { font-size: 36px; font-weight: 800; color: #f4f8ff; }
-.hero p { color: #b7c8e2; }
-.metric { background: #101b2d; border: 1px solid #253956; padding: 20px; border-radius: 14px; }
-.metric-label { color: #93a9c7; font-size: 12px; letter-spacing: 1px; }
-.metric-value { color: #58a6ff; font-size: 30px; font-weight: 800; }
-.stButton button { background: #1767bb; color: white; border: 1px solid #3989df;
+.hero { padding: 28px; border: 1px solid #652536; border-radius: 18px;
+    background: linear-gradient(120deg, #4a1422, #180b10); margin-bottom: 24px; }
+.hero h1 { font-size: 36px; font-weight: 800; color: #fff7f8; }
+.hero p { color: #e0bfc7; }
+.metric { background: #1b0e13; border: 1px solid #4b202c; padding: 20px; border-radius: 14px; }
+.metric-label { color: #c7a0aa; font-size: 12px; letter-spacing: 1px; }
+.metric-value { color: #ff5268; font-size: 30px; font-weight: 800; }
+.stButton button { background: #a81432; color: white; border: 1px solid #ed3553;
     border-radius: 9px; font-weight: 700; }
-.stTextArea textarea, .stTextInput input { background: #0b1525; color: white; border: 1px solid #29405f; }
-div[data-testid="stMetric"] { background: #101b2d; border: 1px solid #253956; padding: 12px; border-radius: 12px; }
+.stTextArea textarea, .stTextInput input { background: #130a0e; color: white; border: 1px solid #612536; }
+div[data-testid="stMetric"] { background: linear-gradient(145deg, #1b0e13, #160a10); border: 1px solid #4b202c; padding: 14px; border-radius: 14px; box-shadow: 0 8px 22px rgba(0,0,0,.12); }
+/* Enhanced visual system */
+:root { --as-blue: #ff4d67; --as-cyan: #ff6578; --as-violet: #ff9aaa; }
+.hero { position: relative; overflow: hidden; min-height: 205px; display: flex; align-items: center; }
+.hero:after { content: ""; position: absolute; width: 270px; height: 270px; border: 1px solid rgba(255,65,95,.28); border-radius: 50%; right: 5%; top: -38px; box-shadow: 0 0 0 24px rgba(255,65,95,.06), 0 0 0 52px rgba(255,65,95,.035); pointer-events: none; }
+.hero-copy { position: relative; z-index: 2; max-width: 72%; }
+.hero-eyebrow { display: inline-block; padding: 6px 10px; border: 1px solid #7a2a3e; border-radius: 999px; color: #ff9aaa !important; background: rgba(170,20,50,.22); font-size: 11px; letter-spacing: 1.5px; font-weight: 800; }
+.hero h1 { margin: 12px 0 8px 0; line-height: 1.12; }
+.hero-graphic { position: absolute; right: 6%; top: 28px; width: 155px; height: 155px; z-index: 1; filter: drop-shadow(0 0 24px rgba(255,45,80,.24)); }
+.section-kicker { color: #ff8b9c; font-size: 11px; letter-spacing: 1.6px; font-weight: 800; text-transform: uppercase; margin-bottom: 5px; }
+.panel { background: linear-gradient(145deg, rgba(35,13,20,.98), rgba(17,8,12,.98)); border: 1px solid #4b202c; border-radius: 16px; padding: 18px; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff6578; margin-right: 8px; box-shadow: 0 0 12px rgba(255,75,105,.65); }
+.visual-label { color: #d6aab5; font-size: 12px; }
+.visual-value { color: #fff0f3; font-size: 24px; font-weight: 800; }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-color: #4b202c !important; }
+.stTabs [data-baseweb="tab-list"] { gap: 8px; }
+.stTabs [data-baseweb="tab"] { background: #1b0e13; border-radius: 9px 9px 0 0; padding: 10px 16px; }
+.stProgress > div > div > div > div { background-image: linear-gradient(90deg, #ff294f, #ff6578); }
+[data-testid="stSidebar"] .stRadio label { padding: 6px 4px; }
+.stButton button:hover { background: linear-gradient(110deg, #d91f43, #ff5268); border-color: #ff8797; box-shadow: 0 0 18px rgba(255,55,85,.22); }
+.stButton button:focus { border-color: #ff6578 !important; box-shadow: 0 0 0 2px rgba(255,65,95,.25) !important; }
+.stTabs [aria-selected="true"] { color: #ff8193 !important; border-bottom-color: #ff405f !important; }
+[data-testid="stSidebar"] [aria-checked="true"] { color: #ff8193 !important; }
+.stAlert { border-color: #652536 !important; }
+[data-testid="stDownloadButton"] button { background: linear-gradient(110deg, #75142a, #bd1f3e); border: 1px solid #ed526c; color: #fff; }
+@media (max-width: 800px) { .hero { min-height: 180px; } .hero-copy { max-width: 100%; } .hero-graphic { opacity: .18; right: -8px; } .hero:after { right: -100px; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -260,10 +285,24 @@ st.sidebar.caption("Local prototype · simulated actions only")
 
 st.markdown("""
 <div class="hero">
-    <p>CHAKRAVYUH 1.0 / HACKSMITHS</p>
-    <h1>Intelligence meets cyber defense.</h1>
-    <p>Inspect sensitive data, analyze suspicious URLs, investigate security
-    indicators, and evaluate AI-agent actions in one unified workspace.</p>
+  <div class="hero-copy">
+    <span class="hero-eyebrow">CHAKRAVYUH 1.0 · HACKSMITHS</span>
+    <h1>Intelligence meets<br>cyber defense.</h1>
+    <p>Protect sensitive information with risk-aware scanning, explainable decisions,<br>and a unified security operations workspace.</p>
+  </div>
+  <svg class="hero-graphic" viewBox="0 0 180 180" role="img" aria-label="AgentShield security shield graphic">
+    <defs>
+      <linearGradient id="shieldGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9cac"/><stop offset="1" stop-color="#d51c43"/></linearGradient>
+      <radialGradient id="orbGlow"><stop offset="0" stop-color="#ff3459" stop-opacity=".3"/><stop offset="1" stop-color="#ff3459" stop-opacity="0"/></radialGradient>
+    </defs>
+    <circle cx="90" cy="90" r="84" fill="url(#orbGlow)"/>
+    <circle cx="90" cy="90" r="69" fill="none" stroke="#ff405f" stroke-opacity=".35" stroke-width="1.4" stroke-dasharray="3 7"/>
+    <circle cx="90" cy="90" r="54" fill="none" stroke="#ff6578" stroke-opacity=".28" stroke-width="1.4"/>
+    <path d="M90 34 L132 50 V83 C132 111 115 132 90 145 C65 132 48 111 48 83 V50 Z" fill="#2c0c16" stroke="url(#shieldGradient)" stroke-width="3"/>
+    <path d="M90 45 L121 57 V83 C121 105 108 121 90 132 C72 121 59 105 59 83 V57 Z" fill="#4a1021" stroke="#ff6578" stroke-opacity=".8" stroke-width="1.2"/>
+    <path d="M73 88 L85 100 L108 74" fill="none" stroke="#ffd0d7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="35" cy="83" r="4" fill="#ff6578"/><circle cx="142" cy="112" r="3" fill="#ff8b9c"/><circle cx="121" cy="27" r="3" fill="#ff6578"/>
+  </svg>
 </div>
 """, unsafe_allow_html=True)
 
@@ -272,31 +311,74 @@ st.markdown("""
 # ---------------------------------------------------------
 if page == "Overview":
     st.subheader("Security Overview")
+    st.caption("A live snapshot of the activity recorded by this AgentShield instance.")
     total, high_risk, blocked, pending = get_metrics()
     cols = st.columns(4)
-    for col, (label, value) in zip(cols, [
+    metric_icons = ["◈", "⚠", "⛨", "◷"]
+    for col, (label, value), glyph in zip(cols, [
         ("AUDIT EVENTS", str(total)), ("HIGH-RISK EVENTS", str(high_risk)),
         ("BLOCKED ACTIONS", str(blocked)), ("PENDING APPROVALS", str(pending)),
-    ]):
+    ], metric_icons):
         with col:
             st.markdown(
-                f'<div class="metric"><div class="metric-label">{label}</div>'
+                f'<div class="metric"><div style="color:#ff6578;font-size:20px;margin-bottom:8px">{glyph}</div>'
+                f'<div class="metric-label">{label}</div>'
                 f'<div class="metric-value">{value}</div></div>',
                 unsafe_allow_html=True,
             )
     st.write("")
-    st.info("Choose a security tool from the sidebar to run an analysis.")
     with sqlite3.connect(DB_PATH) as conn:
         recent = pd.read_sql_query("""
             SELECT created_at AS Time, event_type AS Event, subject AS Subject,
                    decision AS Decision, risk_score AS Risk
-            FROM audit_events ORDER BY id DESC LIMIT 10
+            FROM audit_events ORDER BY id DESC LIMIT 100
         """, conn)
-    st.subheader("Recent security activity")
+
+    # Visual threat posture: computed from recorded events, not external telemetry.
+    posture_score = 0 if recent.empty else min(100, round(recent["Risk"].head(20).mean()))
+    posture_label = "QUIET" if recent.empty else "ELEVATED" if posture_score >= 60 else "GUARDED" if posture_score >= 25 else "STABLE"
+    left, right = st.columns([1.35, 1])
+    with left:
+        st.markdown('<div class="panel"><div class="section-kicker">Threat posture</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px"><span class="status-dot"></span><span style="font-size:23px;font-weight:800;color:#fff0f2">{posture_label}</span><span style="margin-left:auto;color:#cda0ac;font-size:12px">LOCAL EVENT BASED</span></div>', unsafe_allow_html=True)
+        st.progress(posture_score / 100, text=f"Recent-event risk index · {posture_score}/100")
+        st.caption("Calculated from recent recorded event scores. This is not a live network threat feed.")
+        st.markdown('</div>', unsafe_allow_html=True)
+    with right:
+        st.markdown('<div class="panel"><div class="section-kicker">Security controls</div><div style="font-size:19px;font-weight:800;margin:6px 0 10px">Protection workspace</div><div style="color:#d6aab5;font-size:13px;line-height:1.7">Sensitive data scan<br>Outbound policy evaluation<br>Agent action review<br>Persistent audit history</div></div>', unsafe_allow_html=True)
+
+    st.write("")
+    st.markdown("### Activity analytics")
+    chart_left, chart_right = st.columns(2)
+    with chart_left:
+        st.markdown('<div class="section-kicker">Event timeline</div>', unsafe_allow_html=True)
+        if recent.empty:
+            st.info("Run a scan to populate the activity timeline.")
+        else:
+            timeline = recent.copy()
+            timeline["Day"] = pd.to_datetime(timeline["Time"], errors="coerce").dt.strftime("%m-%d")
+            timeline = timeline.dropna(subset=["Day"]).groupby("Day", as_index=False).size().rename(columns={"size": "Events"}).tail(10)
+            if not timeline.empty:
+                st.bar_chart(timeline.set_index("Day"), use_container_width=True, height=245)
+            else:
+                st.caption("Not enough timestamp data to draw the timeline.")
+    with chart_right:
+        st.markdown('<div class="section-kicker">Decision distribution</div>', unsafe_allow_html=True)
+        if recent.empty:
+            st.info("Decision distribution appears after the first security event.")
+        else:
+            distribution = recent["Decision"].fillna("UNKNOWN").value_counts().rename_axis("Decision").reset_index(name="Count")
+            st.bar_chart(distribution.set_index("Decision"), use_container_width=True, height=245)
+            st.caption("Based on the latest 100 recorded events.")
+
+    st.markdown("### Recent security activity")
     if recent.empty:
-        st.caption("No activity recorded yet.")
+        st.caption("No activity recorded yet. Choose a security tool from the sidebar to begin.")
     else:
-        st.dataframe(recent, use_container_width=True, hide_index=True)
+        display_recent = recent.head(10).copy()
+        display_recent["Subject"] = display_recent["Subject"].astype(str).str.slice(0, 100)
+        st.dataframe(display_recent, use_container_width=True, hide_index=True)
+        st.caption("Open Audit Center for filtering and exporting the recorded history.")
 
 # ---------------------------------------------------------
 # DATA SHIELD
@@ -362,6 +444,22 @@ elif page == "Data Shield":
             else:
                 st.success("No configured sensitive-data patterns were detected.")
                 st.caption("This is not proof that the content is safe; unsupported formats and unknown secret types may be missed.")
+
+            st.markdown("#### Risk composition")
+            risk_cols = st.columns(4)
+            for col, (label, count, color) in zip(risk_cols, [
+                ("CRITICAL", critical_count, "#ff5263"),
+                ("HIGH", high_count, "#ff9d4d"),
+                ("MEDIUM", medium_count, "#ffd166"),
+                ("LOW", low_count, "#ff6578"),
+            ]):
+                with col:
+                    st.markdown(
+                        f'<div class="panel"><div style="color:{color};font-size:11px;letter-spacing:1px;font-weight:800">{label}</div>'
+                        f'<div style="font-size:27px;font-weight:800;margin-top:5px">{count}</div>'
+                        f'<div style="height:4px;background:#3c1b25;border-radius:8px;margin-top:10px"><div style="height:4px;width:{min(100, count * 25)}%;background:{color};border-radius:8px"></div></div></div>',
+                        unsafe_allow_html=True,
+                    )
 
             if scan_result.risk_factors:
                 with st.expander("Why this score was assigned", expanded=True):
