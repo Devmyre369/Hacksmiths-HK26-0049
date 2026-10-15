@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from security_engine import scan_sensitive_data
+
 # ---------------------------------------------------------
 # CONFIGURATION + PERSISTENT SQLITE STORAGE
 # ---------------------------------------------------------
@@ -175,14 +177,17 @@ SUSPICIOUS_URL_TERMS = [
 
 
 def scan_secrets(content):
-    findings = []
-    redacted = content
-    for name, pattern in SECRET_PATTERNS.items():
-        matches = list(re.finditer(pattern, content))
-        if matches:
-            findings.append({"Finding": name, "Matches": len(matches)})
-            redacted = re.sub(pattern, "[REDACTED]", redacted)
-    return findings, redacted
+    """Compatibility wrapper around the central security engine."""
+    result = scan_sensitive_data(content)
+    counts = {}
+    for finding in result.findings:
+        label = f"{finding.category.value} — {finding.description}"
+        counts[label] = counts.get(label, 0) + 1
+    findings = [
+        {"Finding": label, "Matches": count}
+        for label, count in counts.items()
+    ]
+    return findings, result.redacted_text
 
 
 def analyze_url(url):
@@ -305,20 +310,25 @@ elif page == "Data Shield":
         if not content.strip():
             st.warning("Enter some text first.")
         else:
+            scan_result = scan_sensitive_data(content)
             findings, redacted = scan_secrets(content)
-            matches = sum(item["Matches"] for item in findings)
-            risk = min(100, matches * 25)
-            decision = "FLAGGED" if findings else "NO_INDICATOR_DETECTED"
+            matches = len(scan_result.findings)
+            risk = scan_result.risk_score
+            decision = "BLOCK" if risk >= 70 else "REVIEW" if findings else "ALLOW"
+            st.metric("Sensitive-data risk", f"{risk}/100")
             if findings:
                 st.error("Potential sensitive information detected.")
                 st.dataframe(pd.DataFrame(findings), use_container_width=True, hide_index=True)
                 st.subheader("Redacted preview")
                 st.code(redacted, language="text")
+                st.warning("Do not share the original text until you have reviewed and removed or redacted sensitive values.")
             else:
                 st.success("No configured patterns were detected.")
                 st.caption("This does not guarantee that the content is safe.")
+            # Audit only categories/counts/scores; never store the original text.
             save_audit("DATA_SCAN", "Sensitive data scan", decision, risk,
-                       {"findings": findings, "matches": matches})
+                       {"findings": findings, "matches": matches,
+                        "categories": sorted({f.category.value for f in scan_result.findings})})
 
 # ---------------------------------------------------------
 # URL THREAT ANALYZER
@@ -389,7 +399,22 @@ elif page == "Agent Firewall":
         if not description.strip():
             st.warning("Describe the requested action first.")
         else:
-            result = inspect_action(tool, description, contains_sensitive_data=sensitive)
+            # Scan the action description before applying the existing tool policy.
+            scan_result = scan_sensitive_data(description)
+            sensitive_detected = sensitive or scan_result.has_sensitive_data
+            result = inspect_action(tool, description, contains_sensitive_data=sensitive_detected)
+
+            # Critical credentials are blocked. Other detected sensitive content
+            # requires review unless the base policy already blocks the action.
+            if any(f.severity.value == "CRITICAL" for f in scan_result.findings):
+                result["decision"] = "BLOCK"
+                result["risk_score"] = max(result["risk_score"], 95)
+                result["reasons"].append("Critical credential pattern detected in the action description.")
+            elif scan_result.has_sensitive_data and result["decision"] == "ALLOW":
+                result["decision"] = "APPROVAL_REQUIRED"
+                result["risk_score"] = max(result["risk_score"], 55)
+                result["reasons"].append("Sensitive information detected; approval is required before any transfer.")
+
             decision, risk = result["decision"], result["risk_score"]
             if decision == "ALLOW":
                 st.success("ALLOW — permitted by the current prototype policy.")
@@ -401,15 +426,31 @@ elif page == "Agent Firewall":
             st.write("**Reasons for this decision**")
             for reason in result["reasons"]:
                 st.write(f"- {reason}")
-            save_audit("AGENT_ACTION", f"{tool}: {description[:150]}", decision, risk, result)
+            if scan_result.has_sensitive_data:
+                st.subheader("Sensitive-data findings")
+                st.dataframe(pd.DataFrame([
+                    {"Category": f.category.value, "Severity": f.severity.value,
+                     "Finding": f.description}
+                    for f in scan_result.findings
+                ]), use_container_width=True, hide_index=True)
+                st.caption("Detected values are intentionally not shown in findings.")
+
+            # Avoid writing the raw action text into the audit DB or approval queue.
+            safe_description = scan_result.redacted_text[:2000]
+            safe_result = {
+                "tool": result["tool"], "risk_score": risk,
+                "decision": decision, "reasons": result["reasons"],
+                "sensitive_categories": sorted({f.category.value for f in scan_result.findings}),
+            }
+            save_audit("AGENT_ACTION", f"{tool}: {safe_description[:150]}", decision, risk, safe_result)
             if decision == "APPROVAL_REQUIRED":
                 with sqlite3.connect(DB_PATH) as conn:
                     conn.execute("""
                         INSERT INTO approvals (created_at, tool, description, risk_score, reasons)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (now_iso(), tool, description[:2000], risk,
+                    """, (now_iso(), tool, safe_description, risk,
                           json.dumps(result["reasons"], ensure_ascii=False)))
-                st.info("This request was added to the Approval Center.")
+                st.info("This request was added to the Approval Center with detected secrets redacted.")
             st.caption("Prototype mode: no external tool or real-world action was executed.")
 
 # ---------------------------------------------------------
