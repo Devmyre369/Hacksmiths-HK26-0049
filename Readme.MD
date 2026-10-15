@@ -153,15 +153,18 @@ The actual workflow depends on the implemented integrations and detection mechan
 
 ## 🏗️ Technology Stack
 
+The intended development direction includes the following technologies. Confirm the final stack against the submitted implementation.
+
 | Layer | Technology | Purpose |
 |---|---|---|
-| User interface and web server | Streamlit | Interactive local security dashboard |
-| Application and security logic | Python | Sensitive-data scanning, policy evaluation, and action gateway |
-| Persistent storage | SQLite | Local audit events and approval records |
-| Data presentation | pandas | Tables, filtering, and dashboard analytics |
+| Frontend | Streamlit | Interactive user interface and security dashboard |
+| Backend | Python | Application logic,  and backend services |
+| Database | SQL database | Persistent storage of application and security-related data |
+| AI and analysis | Python-based tooling and compatible AI integrations, where implemented | Intelligent analysis and interpretation |
+| Security logic | Detection rules and policy checks, where implemented | Identification and handling of risky operations |
 | Version control | Git and GitHub | Source code management and collaboration |
 
-The prototype uses local rule-based analysis and does not require an AI provider or external database.
+Additional libraries, AI providers, or integrations should be documented once their use in the actual project is confirmed.
 
 ## 🧩 System Architecture
 
@@ -226,26 +229,60 @@ AI-based detection can produce false positives and false negatives. AgentShield 
 
 ### Prerequisites
 
-- Python 3.10 or newer
-- Git, if cloning the repository
+Before running the project, ensure the following are available as required by the actual implementation:
 
-### Installation and startup
+- Git
+- Python
+- Node.js and npm, if the frontend uses React.js
+- The configured SQL database, if an external database is required
+- Any required AI-provider credentials or environment variables
 
-From the repository directory, create and activate a virtual environment on Windows, then install the app's dependencies:
+### Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/DevKumar57-67/AgentGuard.git
+cd AgentGuard
+```
+
+**Note:** The repository URL above refers to the original AgentGuard project. Replace it with the AgentShield repository URL if a separate repository has been created for Chakravyuh 1.0.
+
+Inspect the repository's setup instructions and dependency files before proceeding.
+
+For a Django backend, the general setup may look like this:
+
+```bash
+python -m venv .venv
+```
+
+Activate the environment on Windows:
 
 ```powershell
-py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install streamlit pandas
 ```
 
-Start the Streamlit server:
+Install the project's documented dependencies:
 
-```powershell
-python -m streamlit run app.py
+```bash
+pip install -r requirements.txt
 ```
 
-Open `http://localhost:8501` in a browser. The app creates its SQLite database (`agentshield.db`) locally on first run. It does not require external credentials or services. The gateway's demo handlers only return local previews and do not send network requests.
+If the repository contains a Django `manage.py` file, apply migrations and start the development server:
+
+```bash
+python manage.py migrate
+python manage.py runserver
+```
+
+For a React frontend, if one exists in the repository, install its dependencies from the frontend directory:
+
+```bash
+npm install
+npm run dev
+```
+
+These are conditional setup examples. The correct commands, environment variables, database configuration, and service ports must match the actual repository.
 
 ### Environment Configuration
 
