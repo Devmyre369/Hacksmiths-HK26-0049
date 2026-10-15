@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from security_engine import scan_sensitive_data
+from security_engine import scan_sensitive_data, evaluate_outbound, SensitiveDataScanner
 
 # ---------------------------------------------------------
 # CONFIGURATION + PERSISTENT SQLITE STORAGE
@@ -302,33 +302,163 @@ if page == "Overview":
 # DATA SHIELD
 # ---------------------------------------------------------
 elif page == "Data Shield":
-    st.subheader("🔐 Sensitive Data Scanner")
-    st.caption("Detect common secret patterns before sharing text. Use synthetic samples only.")
-    content = st.text_area("Content to inspect", height=220,
-                            placeholder="Paste synthetic sample code or text here...")
-    if st.button("Scan Content", use_container_width=True):
+    st.subheader("🔐 Sensitive Data Protection Center")
+    st.caption("Inspect text locally, understand each finding, redact risky values, and evaluate a proposed transfer before it leaves the app.")
+
+    with st.expander("What this scanner checks", expanded=False):
+        st.write("Credentials and tokens, private-key markers, email addresses, phone-like values, payment-card candidates, bank identifiers, government-ID-like patterns, IP addresses, and confidential-document markers.")
+        st.caption("Use synthetic samples only. Rule matches can produce false positives and do not prove that unmatched content is safe.")
+
+    content = st.text_area(
+        "Content to inspect",
+        height=230,
+        placeholder="Paste synthetic text, code, a message, or a document excerpt here...",
+        help="The current prototype scans only the content you submit on this page. It does not monitor other apps or files automatically.",
+    )
+
+    left, right = st.columns([1, 1])
+    with left:
+        redaction_strategy = st.selectbox(
+            "Redaction strategy",
+            ["Replace with category labels", "Partially mask values", "Remove matched values"],
+        )
+    with right:
+        st.write("")
+        st.write("")
+        run_scan = st.button("🔎 Analyze sensitive data", type="primary", use_container_width=True)
+
+    if run_scan:
         if not content.strip():
             st.warning("Enter some text first.")
         else:
+            scanner = SensitiveDataScanner()
             scan_result = scan_sensitive_data(content)
-            findings, redacted = scan_secrets(content)
-            matches = len(scan_result.findings)
-            risk = scan_result.risk_score
-            decision = "BLOCK" if risk >= 70 else "REVIEW" if findings else "ALLOW"
-            st.metric("Sensitive-data risk", f"{risk}/100")
-            if findings:
-                st.error("Potential sensitive information detected.")
-                st.dataframe(pd.DataFrame(findings), use_container_width=True, hide_index=True)
-                st.subheader("Redacted preview")
-                st.code(redacted, language="text")
-                st.warning("Do not share the original text until you have reviewed and removed or redacted sensitive values.")
+            strategy_map = {
+                "Replace with category labels": "replace",
+                "Partially mask values": "partial",
+                "Remove matched values": "remove",
+            }
+            safe_preview = scanner.mask(content, strategy_map[redaction_strategy])
+            findings_count = len(scan_result.findings)
+            critical_count = sum(f.severity.value == "CRITICAL" for f in scan_result.findings)
+            high_count = sum(f.severity.value == "HIGH" for f in scan_result.findings)
+            medium_count = sum(f.severity.value == "MEDIUM" for f in scan_result.findings)
+            low_count = sum(f.severity.value == "LOW" for f in scan_result.findings)
+
+            # Show a content-based scan report. Transfer decision is evaluated
+            # separately below because destination authorization is contextual.
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Risk score", f"{scan_result.risk_score}/100")
+            m2.metric("Findings", findings_count)
+            m3.metric("High / critical", high_count + critical_count)
+            m4.metric("Data categories", len(scan_result.categories))
+
+            if critical_count:
+                st.error("Critical credential material detected. Do not send the original content.")
+            elif high_count:
+                st.warning("High-severity sensitive information detected. Review the destination and purpose before sharing.")
+            elif findings_count:
+                st.warning("Potential sensitive information detected. Review each finding before sharing.")
             else:
-                st.success("No configured patterns were detected.")
-                st.caption("This does not guarantee that the content is safe.")
-            # Audit only categories/counts/scores; never store the original text.
-            save_audit("DATA_SCAN", "Sensitive data scan", decision, risk,
-                       {"findings": findings, "matches": matches,
-                        "categories": sorted({f.category.value for f in scan_result.findings})})
+                st.success("No configured sensitive-data patterns were detected.")
+                st.caption("This is not proof that the content is safe; unsupported formats and unknown secret types may be missed.")
+
+            if scan_result.risk_factors:
+                with st.expander("Why this score was assigned", expanded=True):
+                    for factor in scan_result.risk_factors:
+                        st.write(f"• {factor}")
+
+            if scan_result.findings:
+                st.markdown("#### Finding-by-finding analysis")
+                rows = []
+                for f in scan_result.findings:
+                    rows.append({
+                        "Category": f.category.value,
+                        "Severity": f.severity.value,
+                        "Rule confidence": f"{f.confidence}% (heuristic)",
+                        "Finding": f.description,
+                        "Masked example": f.matched_preview,
+                        "Recommended action": f.recommendation,
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            st.markdown("#### Safe preview")
+            st.caption(f"Strategy: {redaction_strategy}. The original content is not included in the audit event.")
+            st.code(safe_preview, language="text")
+            st.download_button(
+                "Download redacted content",
+                data=safe_preview,
+                file_name="agentshield_redacted.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+
+            st.markdown("#### Outbound transfer policy check")
+            st.caption("This evaluates a proposed transfer only. It does not send data or verify the destination's reputation.")
+            destination = st.text_input(
+                "Destination URL",
+                key="dlp_destination",
+                placeholder="https://approved.example.com/upload",
+            )
+            authorized = st.checkbox(
+                "I have verified this destination is authorized to receive this data",
+                key="dlp_authorized",
+            )
+            approved = st.checkbox(
+                "I explicitly approve this sensitive-data transfer after reviewing the findings",
+                key="dlp_user_approved",
+            )
+            if st.button("Evaluate transfer", key="evaluate_dlp_transfer", use_container_width=True):
+                transfer = evaluate_outbound(
+                    content,
+                    destination.strip(),
+                    destination_authorized=authorized,
+                    user_approved=approved,
+                )
+                st.markdown(f"**Decision: `{transfer.decision.value}`**")
+                st.progress(min(transfer.risk_score, 100) / 100, text=f"Transfer risk: {transfer.risk_score}/100")
+                for reason in transfer.reasons:
+                    st.write(f"• {reason}")
+                if transfer.decision.value == "BLOCK":
+                    st.error("Do not proceed with this transfer. Remove the sensitive material or use an approved secure workflow.")
+                elif transfer.decision.value == "REVIEW":
+                    st.warning("Transfer requires review. Verify necessity, recipient, and applicable policy before proceeding.")
+                else:
+                    st.success("No configured rule blocked this proposed transfer. This is not a guarantee of safety.")
+                save_audit(
+                    "DLP_TRANSFER_EVALUATION",
+                    "Outbound transfer evaluation",
+                    transfer.decision.value,
+                    transfer.risk_score,
+                    {
+                        "finding_count": len(transfer.scan.findings),
+                        "categories": transfer.scan.categories,
+                        "destination_scheme_https": destination.strip().lower().startswith("https://"),
+                        "destination_authorized": authorized,
+                        "user_approved": approved,
+                        "reasons": list(transfer.reasons),
+                    },
+                )
+
+            # Keep audit details limited to categories/counts and never persist raw content.
+            scan_decision = "BLOCK" if critical_count or scan_result.risk_score >= 70 else "REVIEW" if findings_count else "ALLOW"
+            save_audit(
+                "DATA_SCAN",
+                "Sensitive data scan",
+                scan_decision,
+                scan_result.risk_score,
+                {
+                    "findings_count": findings_count,
+                    "categories": scan_result.categories,
+                    "severity_counts": {
+                        "critical": critical_count,
+                        "high": high_count,
+                        "medium": medium_count,
+                        "low": low_count,
+                    },
+                    "redaction_strategy": redaction_strategy,
+                },
+            )
 
 # ---------------------------------------------------------
 # URL THREAT ANALYZER
